@@ -39,10 +39,12 @@ const validPreconditionChecks = new Set<PreconditionCheck>([
   "appeal_period_expired_or_acknowledged",
 ]);
 
+/** Checks whether a value is a non-null, non-array object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Validates and returns a non-empty string, reporting its config path on failure. */
 function requireString(value: unknown, path: string): string {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`Invalid state machine config: ${path} must be a non-empty string`);
@@ -50,6 +52,7 @@ function requireString(value: unknown, path: string): string {
   return value;
 }
 
+/** Validates and returns an array containing only non-empty strings. */
 function requireStringArray(value: unknown, path: string): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) {
     throw new Error(`Invalid state machine config: ${path} must be an array of non-empty strings`);
@@ -57,6 +60,7 @@ function requireStringArray(value: unknown, path: string): string[] {
   return value;
 }
 
+/** Parses and validates the precondition definitions for a transition. */
 function parsePreconditions(value: unknown, path: string): Precondition[] {
   if (!Array.isArray(value)) throw new Error(`Invalid state machine config: ${path} must be an array`);
   return value.map((item, index) => {
@@ -72,6 +76,7 @@ function parsePreconditions(value: unknown, path: string): Precondition[] {
   });
 }
 
+/** Validates raw configuration data and converts it into the workflow config shape. */
 function parseConfig(value: unknown): StateMachineConfig {
   if (!isRecord(value)) throw new Error("Invalid state machine config: root must be an object");
   const stateNames = new Set<string>();
@@ -128,7 +133,7 @@ function parseConfig(value: unknown): StateMachineConfig {
   return { initialState: initialState as StateName, states, transitions };
 }
 
-/** Reads JSON and validates state names, transitions, descriptions, and role names. */
+/** Reads a JSON config file and validates states, transitions, descriptions, roles, and preconditions. */
 export function loadStateMachineConfig(
   filePath = resolve(process.cwd(), "config/state-machine.json"),
 ): StateMachineConfig {

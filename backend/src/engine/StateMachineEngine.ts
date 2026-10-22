@@ -13,6 +13,7 @@ import {
 } from "../types/workflow";
 
 export class WorkflowError extends Error {
+  /** Creates a workflow error with a stable machine-readable code. */
   constructor(message: string, readonly code: string) {
     super(message);
     this.name = new.target.name;
@@ -20,18 +21,21 @@ export class WorkflowError extends Error {
 }
 
 export class ClaimNotFoundError extends WorkflowError {
+  /** Creates an error for a claim ID that is not stored by the engine. */
   constructor(claimId: string) {
     super(`Claim "${claimId}" does not exist.`, "CLAIM_NOT_FOUND");
   }
 }
 
 export class InvalidTransitionError extends WorkflowError {
+  /** Creates an error for a transition that is not configured from the current state. */
   constructor(message: string) {
     super(message, "INVALID_TRANSITION");
   }
 }
 
 export class AuthorizationError extends WorkflowError {
+  /** Creates an error when the actor's role is not allowed for a transition. */
   constructor(from: StateName, to: StateName, allowed: readonly Role[], actual: Role) {
     super(
       `Role "${actual}" is not authorized to transition ${from} → ${to}. Authorized role${allowed.length === 1 ? "" : "s"}: ${allowed.join(", ")}.`,
@@ -41,6 +45,7 @@ export class AuthorizationError extends WorkflowError {
 }
 
 export class PreconditionFailedError extends WorkflowError {
+  /** Creates an error listing the preconditions that block a transition. */
   constructor(from: StateName, to: StateName, descriptions: readonly string[]) {
     super(
       `Cannot transition ${from} → ${to}; unmet precondition${descriptions.length === 1 ? "" : "s"}: ${descriptions.join("; ")}`,
@@ -50,6 +55,7 @@ export class PreconditionFailedError extends WorkflowError {
 }
 
 export class InformationRequestLimitError extends WorkflowError {
+  /** Creates an error raised when the configured information request limit is reached. */
   constructor(limit: number) {
     super(
       `Maximum information requests exceeded — escalate to team lead (limit: ${limit}).`,
@@ -89,6 +95,7 @@ export interface StateMachineEngineOptions {
   readonly sideEffectLogger?: (message: string) => void;
 }
 
+/** Reads and validates the information request cycle limit from the environment or an env file. */
 function readCycleLimit(envPath = resolve(process.cwd(), ".env")): number {
   let fileValue: string | undefined;
   if (existsSync(envPath)) {
@@ -105,6 +112,7 @@ function readCycleLimit(envPath = resolve(process.cwd(), ".env")): number {
   return limit;
 }
 
+/** Returns whether a value is a non-empty string after trimming whitespace. */
 function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -122,6 +130,7 @@ export class StateMachineEngine {
   private readonly now: () => Date;
   private readonly logSideEffect: (message: string) => void;
 
+  /** Creates an engine using the supplied configuration and optional runtime dependencies. */
   constructor(options: StateMachineEngineOptions = {}) {
     this.config = options.config ?? loadStateMachineConfig(options.configPath);
     this.maxInformationRequestCycles = options.maxInformationRequestCycles ?? readCycleLimit(options.envPath);
@@ -132,6 +141,7 @@ export class StateMachineEngine {
     this.logSideEffect = options.sideEffectLogger ?? console.log;
   }
 
+  /** Creates a claim in the configured initial state and initializes its audit history. */
   createClaim(id: string, facts: ClaimFacts = {}, policyLimit?: number): Claim {
     if (!hasText(id)) throw new Error("Claim id must be a non-empty string.");
     if (this.claims.has(id)) throw new Error(`Claim "${id}" already exists.`);
@@ -150,6 +160,7 @@ export class StateMachineEngine {
     return claim;
   }
 
+  /** Returns the immutable snapshot for a claim, or throws if it does not exist. */
   getClaim(claimId: string): Claim {
     const claim = this.claims.get(claimId);
     if (!claim) throw new ClaimNotFoundError(claimId);
@@ -162,11 +173,13 @@ export class StateMachineEngine {
     return this.replaceClaim(claim, { ...claim.facts, ...facts });
   }
 
+  /** Returns how many information requests have been issued for a claim. */
   getInformationRequestCycles(claimId: string): number {
     this.getClaim(claimId);
     return this.informationRequestCycles.get(claimId) ?? 0;
   }
 
+  /** Lists configured transitions from the claim's current state and their precondition status. */
   getValidTransitions(claimId: string): readonly AvailableTransition[] {
     const claim = this.getClaim(claimId);
     return Object.freeze(
@@ -185,6 +198,7 @@ export class StateMachineEngine {
     );
   }
 
+  /** Validates and applies a transition, records its audit entry, and runs configured side effects. */
   advance(input: AdvanceClaimInput): Claim {
     const claim = this.getClaim(input.claimId);
     const transition = this.config.transitions.find(
@@ -242,17 +256,20 @@ export class StateMachineEngine {
     return nextClaim;
   }
 
+  /** Returns an immutable copy of the claim's audit history. */
   getAuditTrail(claimId: string): readonly AuditEntry[] {
     this.getClaim(claimId);
     return Object.freeze([...(this.auditEntries.get(claimId) ?? [])]);
   }
 
+  /** Replaces a stored claim after updating its facts and timestamp. */
   private replaceClaim(claim: Claim, facts: ClaimFacts): Claim {
     const updated = this.snapshotClaim({ ...claim, facts, updatedAt: this.now().toISOString() });
     this.claims.set(claim.id, updated);
     return updated;
   }
 
+  /** Copies and freezes claim data so callers cannot mutate engine state. */
   private snapshotClaim(claim: Claim): Claim {
     return Object.freeze({
       ...claim,
@@ -261,6 +278,7 @@ export class StateMachineEngine {
     });
   }
 
+  /** Evaluates one configured precondition against the claim's current facts. */
   private evaluate(check: PreconditionCheck, claim: Claim): boolean {
     const facts = claim.facts ?? {};
     switch (check) {
