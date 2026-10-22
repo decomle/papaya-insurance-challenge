@@ -16,16 +16,6 @@ const validRoles = new Set<Role>([
   "finance",
   "system",
 ]);
-const validStates = new Set<StateName>([
-  "SUBMITTED",
-  "DOCUMENTS_VERIFIED",
-  "UNDER_ASSESSMENT",
-  "PENDING_INFO",
-  "APPROVED",
-  "REJECTED",
-  "PAYMENT_INITIATED",
-  "CLOSED",
-]);
 const validPreconditionChecks = new Set<PreconditionCheck>([
   "documents_present",
   "assessor_assigned",
@@ -88,9 +78,6 @@ function parseConfig(value: unknown): StateMachineConfig {
     if (!isRecord(item)) throw new Error(`Invalid state machine config: states[${index}] must be an object`);
     const name = requireString(item.name, `states[${index}].name`);
     const description = requireString(item.description, `states[${index}].description`);
-    if (!validStates.has(name as StateName)) {
-      throw new Error(`Invalid state machine config: state "${name}" is not supported by this application`);
-    }
     if (stateNames.has(name)) throw new Error(`Invalid state machine config: duplicate state "${name}"`);
     stateNames.add(name);
     return { name: name as StateName, description };

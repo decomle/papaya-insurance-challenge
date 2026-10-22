@@ -6,7 +6,9 @@ export type StateName =
   | "APPROVED"
   | "REJECTED"
   | "PAYMENT_INITIATED"
-  | "CLOSED";
+  | "CLOSED"
+  /** Permit additional state names declared in a runtime workflow configuration. */
+  | (string & {});
 
 /** A role authorized to perform one or more configured transitions. */
 export type Role =
