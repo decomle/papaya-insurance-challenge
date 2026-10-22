@@ -22,6 +22,12 @@ Run `npm run build` to compile the backend, `npm run build:frontend` to build th
 
 The API provides `GET /api/claims`, `GET /api/claims/:claim_id`, and `POST /api/claims/:claim_id/transition`. Workflow data is in memory and resets when the server restarts.
 
+### Authentication note
+
+The frontend's **Triggering user ID** and **User role** fields provide actor details for the demo and let you exercise role-based transition checks. They do not authenticate a user: the API currently receives these values directly from the request, so they represent caller-provided data.
+
+In a production setup, the actor would represent the logged-in account verified by the server, with its user ID and role derived from the authenticated session or access token. The server would use that verified identity and role when authorizing the requested transition, rather than relying on values supplied by the client.
+
 ## Workflow engine
 
 The engine is in-memory and provides `createClaim`, `updateFacts`, `getClaim`, `getValidTransitions`, `advance`, and `getAuditTrail`. Supply claim facts as upstream systems report them. The configured precondition check IDs are evaluated against these facts: document presence, assessor assignment, assessment completion, amount against policy limit, rejection reason, missing information, new information received, payment request, payment confirmation, and appeal expiry/member acknowledgment.
