@@ -1,0 +1,66 @@
+{
+  "initialState": "SUBMITTED",
+  "states": [
+    { "name": "SUBMITTED", "description": "Claim received, awaiting document verification." },
+    { "name": "DOCUMENTS_VERIFIED", "description": "All required documents are present and valid." },
+    { "name": "UNDER_ASSESSMENT", "description": "An assessor is reviewing the claim." },
+    { "name": "PENDING_INFO", "description": "Additional information has been requested from the member." },
+    { "name": "APPROVED", "description": "Claim approved for payment." },
+    { "name": "REJECTED", "description": "Claim denied." },
+    { "name": "PAYMENT_INITIATED", "description": "Payment processing has started." },
+    { "name": "CLOSED", "description": "Claim lifecycle is complete." }
+  ],
+  "transitions": [
+    {
+      "from": "SUBMITTED", "to": "DOCUMENTS_VERIFIED",
+      "preconditions": [{ "check": "documents_present", "description": "All required documents are present." }],
+      "sideEffects": ["Notify the assessor team."], "authorizedRoles": ["document_clerk"]
+    },
+    {
+      "from": "DOCUMENTS_VERIFIED", "to": "UNDER_ASSESSMENT",
+      "preconditions": [{ "check": "assessor_assigned", "description": "An assessor is assigned." }],
+      "sideEffects": ["Log the assessment start time."], "authorizedRoles": ["team_lead"]
+    },
+    {
+      "from": "UNDER_ASSESSMENT", "to": "APPROVED",
+      "preconditions": [
+        { "check": "assessment_report_complete", "description": "The assessment report is complete." },
+        { "check": "approved_amount_within_policy_limit", "description": "The approved amount is within the policy limit." }
+      ],
+      "sideEffects": ["Notify the member.", "Create a payment request."], "authorizedRoles": ["assessor"]
+    },
+    {
+      "from": "UNDER_ASSESSMENT", "to": "REJECTED",
+      "preconditions": [
+        { "check": "assessment_report_complete", "description": "The assessment report is complete." },
+        { "check": "rejection_reason_provided", "description": "A rejection reason is provided." }
+      ],
+      "sideEffects": ["Notify the member with the reason and appeal instructions."], "authorizedRoles": ["assessor"]
+    },
+    {
+      "from": "UNDER_ASSESSMENT", "to": "PENDING_INFO",
+      "preconditions": [{ "check": "missing_info_description_provided", "description": "A description of the missing information is provided." }],
+      "sideEffects": ["Notify the member with the information request details."], "authorizedRoles": ["assessor"]
+    },
+    {
+      "from": "PENDING_INFO", "to": "DOCUMENTS_VERIFIED",
+      "preconditions": [{ "check": "new_information_received", "description": "New documents or information have been received." }],
+      "sideEffects": ["Reset the assessment timer."], "authorizedRoles": ["document_clerk"]
+    },
+    {
+      "from": "APPROVED", "to": "PAYMENT_INITIATED",
+      "preconditions": [{ "check": "payment_request_created", "description": "A payment request has been created." }],
+      "sideEffects": ["Trigger the payment system."], "authorizedRoles": ["finance"]
+    },
+    {
+      "from": "PAYMENT_INITIATED", "to": "CLOSED",
+      "preconditions": [{ "check": "payment_confirmed", "description": "Payment is confirmed." }],
+      "sideEffects": ["Notify the member with the payment reference."], "authorizedRoles": ["finance"]
+    },
+    {
+      "from": "REJECTED", "to": "CLOSED",
+      "preconditions": [{ "check": "appeal_period_expired_or_acknowledged", "description": "The appeal period has expired or the member has acknowledged the decision." }],
+      "sideEffects": ["Archive the claim."], "authorizedRoles": ["system"]
+    }
+  ]
+}
