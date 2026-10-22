@@ -124,7 +124,7 @@ function hasText(value: unknown): value is string {
 export class StateMachineEngine {
   private readonly config: StateMachineConfig;
   private readonly claims = new Map<string, Claim>();
-  private readonly auditEntries = new Map<string, AuditEntry[]>();
+  private readonly auditEntries = new Map<string, readonly AuditEntry[]>();
   private readonly informationRequestCycles = new Map<string, number>();
   private readonly maxInformationRequestCycles: number;
   private readonly now: () => Date;
@@ -155,7 +155,7 @@ export class StateMachineEngine {
       ...(policyLimit === undefined ? {} : { policyLimit }),
     });
     this.claims.set(id, claim);
-    this.auditEntries.set(id, []);
+    this.auditEntries.set(id, Object.freeze([]));
     this.informationRequestCycles.set(id, 0);
     return claim;
   }
@@ -246,20 +246,26 @@ export class StateMachineEngine {
 
     // Commit state and audit as one synchronous operation, then run mock effects.
     this.claims.set(claim.id, nextClaim);
-    this.auditEntries.get(claim.id)!.push(auditEntry);
+    const history = this.auditEntries.get(claim.id) ?? Object.freeze([]);
+    this.auditEntries.set(claim.id, Object.freeze([...history, auditEntry]));
     if (input.to === "PENDING_INFO") {
       this.informationRequestCycles.set(claim.id, cycles + 1);
     }
-    for (const effect of transition.sideEffects) {
-      this.logSideEffect(`[claim:${claim.id}] ${effect}`);
-    }
+    this.executeSideEffects(claim.id, transition.sideEffects);
     return nextClaim;
   }
 
   /** Returns an immutable copy of the claim's audit history. */
   getAuditTrail(claimId: string): readonly AuditEntry[] {
     this.getClaim(claimId);
-    return Object.freeze([...(this.auditEntries.get(claimId) ?? [])]);
+    return this.auditEntries.get(claimId) ?? Object.freeze([]);
+  }
+
+  /** Logs each configured mock side effect after the transition has been committed. */
+  private executeSideEffects(claimId: string, sideEffects: readonly string[]): void {
+    for (const effect of sideEffects) {
+      this.logSideEffect(`[side-effect] [claim:${claimId}] ${effect}`);
+    }
   }
 
   /** Replaces a stored claim after updating its facts and timestamp. */
