@@ -164,6 +164,26 @@ describe("StateMachineEngine validation, audit, and effects", () => {
       .toThrow(PreconditionFailedError);
   });
 
+  it("uses a supplied rejection reason to satisfy and persist the rejection precondition", () => {
+    const engine = createEngine();
+    engine.createClaim("reason-from-input", {
+      documentsPresent: true,
+      assessorAssigned: true,
+      assessmentReportComplete: true,
+    });
+    move(engine, "reason-from-input", "DOCUMENTS_VERIFIED", "document_clerk");
+    move(engine, "reason-from-input", "UNDER_ASSESSMENT", "team_lead");
+
+    const rejected = move(engine, "reason-from-input", "REJECTED", "assessor", {
+      reason: "The treatment is excluded by the policy.",
+    });
+
+    expect(rejected.state).toBe("REJECTED");
+    expect(rejected.facts?.rejectionReason).toBe("The treatment is excluded by the policy.");
+    expect(engine.getAuditTrail("reason-from-input").at(-1)?.reason)
+      .toBe("The treatment is excluded by the policy.");
+  });
+
   it("rejects an information request without a missing information description", () => {
     const engine = createEngine();
     engine.createClaim("no-info-description");
@@ -203,6 +223,29 @@ describe("StateMachineEngine validation, audit, and effects", () => {
       .toThrow(InformationRequestLimitError);
     expect(engine.getInformationRequestCycles("cycle-limit")).toBe(3);
     expect(engine.getClaim("cycle-limit").state).toBe("UNDER_ASSESSMENT");
+  });
+
+  it("loads the cycle limit from an env file and falls back to three", () => {
+    const directory = mkdtempSync(join(tmpdir(), "workflow-cycle-limit-"));
+    const envPath = join(directory, ".env");
+    const previousValue = process.env.MAX_INFO_REQUEST_CYCLES;
+    delete process.env.MAX_INFO_REQUEST_CYCLES;
+
+    try {
+      writeFileSync(envPath, "MAX_INFO_REQUEST_CYCLES=2\n");
+      const configured = new StateMachineEngine({ config: loadStateMachineConfig(), envPath });
+      const fallback = new StateMachineEngine({
+        config: loadStateMachineConfig(),
+        envPath: join(directory, "missing.env"),
+      });
+
+      expect(configured.getInformationRequestCycleLimit()).toBe(2);
+      expect(fallback.getInformationRequestCycleLimit()).toBe(3);
+    } finally {
+      if (previousValue === undefined) delete process.env.MAX_INFO_REQUEST_CYCLES;
+      else process.env.MAX_INFO_REQUEST_CYCLES = previousValue;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("records accurate transition audit fields, including reason and notes", () => {

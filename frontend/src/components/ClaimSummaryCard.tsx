@@ -1,8 +1,8 @@
-import type { ClaimRecord } from "../types";
+import type { ClaimDetails } from "../types";
 import { formatMoney, stateLabel } from "../workflow";
 
 type Props = {
-  claim: ClaimRecord;
+  claim: ClaimDetails;
   maxInformationRequestCycles: number;
 };
 

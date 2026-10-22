@@ -1,14 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import AppHeader from "./components/AppHeader";
 import AuditCard from "./components/AuditCard";
 import ClaimActionCard from "./components/ClaimActionCard";
 import ClaimSummaryCard from "./components/ClaimSummaryCard";
-import type { AuditEntry, ClaimRecord, Role } from "./types";
-import { checkPrecondition, config, maxInformationRequestCycles, roleLabels, sampleClaims, stateLabel } from "./workflow";
+import { useClaimDetails } from "./hooks/useClaimDetails";
+import { useClaims } from "./hooks/useClaims";
+import { useTransitionClaim } from "./hooks/useTransitionClaim";
+import type { Role } from "./types";
+import { roleLabels, stateLabel } from "./workflow";
 
 function App() {
-  const [claims, setClaims] = useState(sampleClaims);
-  const [claimId, setClaimId] = useState(sampleClaims[0]!.id);
+  const { claims, isLoading: isLoadingClaims, error: claimsError, reload: reloadClaims } = useClaims();
+  const [claimId, setClaimId] = useState("");
+  const { claim, setClaim, isLoading: isLoadingClaim, error: claimError } = useClaimDetails(claimId);
+  const { transitionClaim, isPending } = useTransitionClaim();
   const [userId, setUserId] = useState("alex.morgan");
   const [userRole, setUserRole] = useState<Role>("document_clerk");
   const [reason, setReason] = useState("");
@@ -16,26 +21,27 @@ function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const claim = claims.find((item) => item.id === claimId)!;
-  const availableTransitions = useMemo(
-    () => config.transitions.filter((transition) => transition.from === claim.state),
-    [claim.state],
-  );
+  useEffect(() => {
+    if (!claimId && claims.length > 0) setClaimId(claims[0]!.id);
+  }, [claimId, claims]);
+
+  useEffect(() => {
+    const defaultRole = claim?.validTransitions[0]?.authorizedRoles[0];
+    if (defaultRole) setUserRole(defaultRole);
+  }, [claim?.id, claim?.state]);
+
+  const availableTransitions = claim?.validTransitions ?? [];
   const activeTo = availableTransitions.some((transition) => transition.to === selectedTo)
     ? selectedTo
     : availableTransitions[0]?.to ?? "";
   const activeTransition = availableTransitions.find((transition) => transition.to === activeTo);
 
   function selectClaim(nextClaimId: string) {
-    const nextClaim = claims.find((item) => item.id === nextClaimId);
     setClaimId(nextClaimId);
     setError("");
     setNotice("");
     setSelectedTo("");
-    if (nextClaim) {
-      const nextTransition = config.transitions.find((transition) => transition.from === nextClaim.state);
-      if (nextTransition?.authorizedRoles[0]) setUserRole(nextTransition.authorizedRoles[0]);
-    }
+    setReason("");
   }
 
   function selectTransition(to: string, nextRole?: Role) {
@@ -45,56 +51,32 @@ function App() {
     if (nextRole) setUserRole(nextRole);
   }
 
-  function executeTransition() {
-    if (!activeTransition) return;
+  async function executeTransition() {
+    if (!claim || !activeTransition || isPending) return;
     if (!userId.trim()) {
       setError("Enter a triggering user ID before executing this transition.");
       return;
     }
-    if (!activeTransition.authorizedRoles.includes(userRole)) {
-      setError(`Role “${roleLabels[userRole]}” is not authorized to transition ${stateLabel(claim.state)} to ${stateLabel(activeTransition.to)}. Required role: ${activeTransition.authorizedRoles.map((role) => roleLabels[role]).join(", ")}.`);
-      return;
-    }
-    if (activeTransition.to === "PENDING_INFO" && claim.informationRequestCycles >= maxInformationRequestCycles) {
-      setError(`Maximum information requests exceeded — escalate to team lead (limit: ${maxInformationRequestCycles}).`);
-      return;
-    }
 
-    const rejectionReason = activeTransition.to === "REJECTED" ? reason.trim() : "";
-    const claimForChecks = rejectionReason
-      ? { ...claim, facts: { ...claim.facts, rejectionReason } }
-      : claim;
-    const unmet = activeTransition.preconditions.filter((condition) => !checkPrecondition(condition.check, claimForChecks));
-    if (unmet.length > 0) {
-      setError(`Cannot transition ${stateLabel(claim.state)} to ${stateLabel(activeTransition.to)}. Unmet preconditions: ${unmet.map((condition) => condition.description).join(" ")}`);
-      return;
+    try {
+      const updatedClaim = await transitionClaim(claim.id, {
+        to: activeTransition.to,
+        actor: { userId: userId.trim(), role: userRole },
+        reason: reason.trim(),
+      });
+      setClaim(updatedClaim);
+      await reloadClaims();
+      setNotice(`${stateLabel(updatedClaim.auditTrail.at(-1)?.fromState ?? claim.state)} → ${stateLabel(updatedClaim.state)} completed successfully.`);
+      setError("");
+      setReason("");
+      setSelectedTo("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to transition this claim.");
+      setNotice("");
     }
-
-    const entry: AuditEntry = {
-      timestamp: new Date().toISOString(),
-      fromState: claim.state,
-      toState: activeTransition.to,
-      userId: userId.trim(),
-      role: userRole,
-      reason: reason.trim(),
-    };
-    setClaims((current) => current.map((item) => item.id !== claim.id ? item : {
-      ...item,
-      state: activeTransition.to,
-      facts: activeTransition.to === "REJECTED"
-        ? { ...item.facts, rejectionReason }
-        : item.facts,
-      informationRequestCycles: item.informationRequestCycles + (activeTransition.to === "PENDING_INFO" ? 1 : 0),
-      audit: [...item.audit, entry],
-    }));
-    activeTransition.sideEffects.forEach((effect) => console.info(`[side-effect] [claim:${claim.id}] ${effect}`));
-    const nextTransition = config.transitions.find((transition) => transition.from === activeTransition.to);
-    if (nextTransition?.authorizedRoles[0]) setUserRole(nextTransition.authorizedRoles[0]);
-    setNotice(`${stateLabel(claim.state)} → ${stateLabel(activeTransition.to)} completed successfully.`);
-    setError("");
-    setReason("");
-    setSelectedTo("");
   }
+
+  const pageError = claimsError || claimError;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -111,30 +93,37 @@ function App() {
               className="min-w-52 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               value={claimId}
               onChange={(event) => selectClaim(event.target.value)}
+              disabled={isLoadingClaims || claims.length === 0}
             >
-              {claims.map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}
+              {claims.map((item) => <option key={item.id} value={item.id}>{item.id} · {stateLabel(item.state)}</option>)}
             </select>
           </label>
         </div>
 
-        <ClaimSummaryCard claim={claim} maxInformationRequestCycles={maxInformationRequestCycles} />
-        <ClaimActionCard
-          claim={claim}
-          availableTransitions={availableTransitions}
-          activeTo={activeTo}
-          userId={userId}
-          userRole={userRole}
-          reason={reason}
-          error={error}
-          notice={notice}
-          onSelectTransition={selectTransition}
-          onUserIdChange={setUserId}
-          onUserRoleChange={setUserRole}
-          onReasonChange={setReason}
-          onExecute={executeTransition}
-        />
-        <AuditCard audit={claim.audit} />
-        <p className="mt-4 text-center text-[11px] text-slate-400">Claims workflow demo · Changes are kept in this browser session only.</p>
+        {pageError && <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{pageError}</div>}
+        {(isLoadingClaims || isLoadingClaim) && <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">Loading claim data…</div>}
+
+        {claim && <>
+          <ClaimSummaryCard claim={claim} maxInformationRequestCycles={claim.maxInformationRequestCycles} />
+          <ClaimActionCard
+            claim={claim}
+            availableTransitions={availableTransitions}
+            activeTo={activeTo}
+            userId={userId}
+            userRole={userRole}
+            reason={reason}
+            error={error}
+            notice={notice}
+            isPending={isPending}
+            onSelectTransition={selectTransition}
+            onUserIdChange={setUserId}
+            onUserRoleChange={setUserRole}
+            onReasonChange={setReason}
+            onExecute={executeTransition}
+          />
+          <AuditCard audit={claim.auditTrail} />
+        </>}
+        <p className="mt-4 text-center text-[11px] text-slate-400">Claims workflow demo · State and audit history are served by the backend.</p>
       </main>
     </div>
   );

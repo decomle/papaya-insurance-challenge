@@ -2,36 +2,49 @@ export type Role = "document_clerk" | "team_lead" | "assessor" | "finance" | "sy
 export type WorkflowState = string;
 export type Facts = Record<string, unknown>;
 
-export type WorkflowConfig = {
-  initialState: WorkflowState;
-  states: { name: WorkflowState; description: string }[];
-  transitions: WorkflowTransition[];
-};
-
-export type WorkflowTransition = {
-  from: WorkflowState;
-  to: WorkflowState;
-  preconditions: { check: string; description: string }[];
-  sideEffects: string[];
-  authorizedRoles: Role[];
-};
-
 export type AuditEntry = {
   timestamp: string;
+  claimId: string;
   fromState: WorkflowState;
   toState: WorkflowState;
-  userId: string;
-  role: Role;
-  reason: string;
+  triggeredBy: { userId: string; role: Role };
+  reason?: string;
+  notes?: string;
 };
 
-export type ClaimRecord = {
+export type ClaimSummary = {
   id: string;
   memberId: string;
   amount: number;
   policyLimit: number;
   state: WorkflowState;
-  facts: Facts;
+};
+
+export type TransitionPrecondition = {
+  check: string;
+  description: string;
+  satisfied: boolean;
+};
+
+export type AvailableTransition = {
+  to: WorkflowState;
+  authorizedRoles: Role[];
+  preconditions: TransitionPrecondition[];
+};
+
+export type ClaimDetails = ClaimSummary & {
+  createdAt: string;
+  updatedAt: string;
+  facts?: Facts;
   informationRequestCycles: number;
-  audit: AuditEntry[];
+  maxInformationRequestCycles: number;
+  validTransitions: AvailableTransition[];
+  auditTrail: AuditEntry[];
+};
+
+export type TransitionRequest = {
+  to: WorkflowState;
+  actor: { userId: string; role: Role };
+  reason?: string;
+  notes?: string;
 };

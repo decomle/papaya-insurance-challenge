@@ -30,8 +30,8 @@ export default function AuditCard({ audit }: { audit: AuditEntry[] }) {
                 <td className="whitespace-nowrap px-5 py-3.5 text-slate-500 sm:px-6">{new Date(entry.timestamp).toLocaleString()}</td>
                 <td className="px-4 py-3.5">{stateLabel(entry.fromState)}</td>
                 <td className="px-4 py-3.5 font-medium text-slate-800">{stateLabel(entry.toState)}</td>
-                <td className="px-4 py-3.5"><span className="font-medium text-slate-800">{entry.userId}</span><span className="ml-1.5 text-slate-400">· {roleLabels[entry.role]}</span></td>
-                <td className="max-w-64 px-4 py-3.5 text-slate-500">{entry.reason || <span className="text-slate-300">—</span>}</td>
+                <td className="px-4 py-3.5"><span className="font-medium text-slate-800">{entry.triggeredBy.userId}</span><span className="ml-1.5 text-slate-400">· {roleLabels[entry.triggeredBy.role]}</span></td>
+                <td className="max-w-64 px-4 py-3.5 text-slate-500">{[entry.reason, entry.notes].filter(Boolean).join(" · ") || <span className="text-slate-300">—</span>}</td>
               </tr>
             ))}
           </tbody>

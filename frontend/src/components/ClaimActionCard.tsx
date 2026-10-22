@@ -1,15 +1,16 @@
-import type { ClaimRecord, Role, WorkflowTransition } from "../types";
-import { checkPrecondition, roleLabels, stateLabel, roles } from "../workflow";
+import type { AvailableTransition, ClaimDetails, Role } from "../types";
+import { roleLabels, stateLabel, roles } from "../workflow";
 
 type Props = {
-  claim: ClaimRecord;
-  availableTransitions: WorkflowTransition[];
+  claim: ClaimDetails;
+  availableTransitions: AvailableTransition[];
   activeTo: string;
   userId: string;
   userRole: Role;
   reason: string;
   error: string;
   notice: string;
+  isPending: boolean;
   onSelectTransition: (to: string, role?: Role) => void;
   onUserIdChange: (userId: string) => void;
   onUserRoleChange: (role: Role) => void;
@@ -26,6 +27,7 @@ export default function ClaimActionCard({
   reason,
   error,
   notice,
+  isPending,
   onSelectTransition,
   onUserIdChange,
   onUserRoleChange,
@@ -54,10 +56,13 @@ export default function ClaimActionCard({
               <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">This claim is in a terminal state. No transitions are available.</div>
             ) : availableTransitions.map((transition) => {
               const selected = activeTo === transition.to;
-              const unmetCount = transition.preconditions.filter((condition) => !checkPrecondition(condition.check, claim)).length;
+              const unmetCount = transition.preconditions.filter((condition) => {
+                const satisfiedByReason = transition.to === "REJECTED" && condition.check === "rejection_reason_provided" && reason.trim().length > 0;
+                return !condition.satisfied && !satisfiedByReason;
+              }).length;
               return (
                 <button
-                  key={`${transition.from}-${transition.to}`}
+                  key={`${claim.state}-${transition.to}`}
                   type="button"
                   onClick={() => onSelectTransition(transition.to, transition.authorizedRoles[0])}
                   className={`w-full rounded-xl border p-3.5 text-left transition ${selected ? "border-blue-300 bg-blue-50/70 ring-1 ring-blue-100" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
@@ -79,7 +84,9 @@ export default function ClaimActionCard({
                   {transition.preconditions.length > 0 && (
                     <ul className="ml-[26px] mt-2 space-y-1">
                       {transition.preconditions.map((condition) => {
-                        const satisfied = checkPrecondition(condition.check, claim);
+                        const satisfied = condition.satisfied || (
+                          transition.to === "REJECTED" && condition.check === "rejection_reason_provided" && reason.trim().length > 0
+                        );
                         return <li key={condition.check} className={`flex items-start gap-1.5 text-[11px] ${satisfied ? "text-emerald-700" : "text-slate-500"}`}>
                           <span className="mt-px font-bold">{satisfied ? "✓" : "○"}</span><span>{condition.description}</span>
                         </li>;
@@ -112,8 +119,8 @@ export default function ClaimActionCard({
             </label>
             <div className="mt-4 flex items-center justify-between gap-3">
               <p className="text-xs text-slate-500">Next state: <span className="font-semibold text-slate-700">{activeTransition ? stateLabel(activeTransition.to) : "—"}</span></p>
-              <button className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300" type="submit" disabled={!activeTransition}>
-                Execute transition <span aria-hidden="true">→</span>
+              <button className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300" type="submit" disabled={!activeTransition || isPending}>
+                {isPending ? "Executing…" : "Execute transition"} {!isPending && <span aria-hidden="true">→</span>}
               </button>
             </div>
             <p className="mt-3 text-[11px] leading-relaxed text-slate-400">Side effects are simulated and written to the browser console.</p>

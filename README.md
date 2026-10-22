@@ -7,14 +7,20 @@ Starter TypeScript repository for the claims lifecycle workflow challenge.
 - `config/state-machine.json` defines lifecycle states, transitions, preconditions, side effects, and authorized roles.
 - `backend/src/types/workflow.ts` contains the shared workflow domain types.
 - `backend/src/config/loadStateMachineConfig.ts` loads and validates the JSON configuration.
-- `backend/src/engine/StateMachineEngine.ts` validates transitions, preconditions, authorization, cycle limits, and appends audit entries.
-- `frontend/` is reserved for the TypeScript user interface.
+- `backend/src/engine/StateMachineEngine.ts` validates transitions, preconditions, authorization, cycle limits, appends audit entries, and provides the sample-claim factory.
+- `backend/src/routes/claims.ts` maps the claims API endpoints to the workflow engine.
+- `backend/src/server.ts` creates the Fastify app, registers routes, and starts listening.
+- `frontend/` contains the React + Vite + Tailwind workflow interface and API hooks.
 
 The configuration loader defaults to `config/state-machine.json` relative to the current working directory. Pass a file path to `loadStateMachineConfig(path)` to load another configuration.
 
 ## Build
 
-Install the development dependencies and run `npm run build` to compile the backend TypeScript sources.
+Install the dependencies with `npm install`. Run `npm run dev` to start the Fastify API and Vite UI together. The UI is available at `http://localhost:5173`; the API listens on port `3001`.
+
+Run `npm run build` to compile the backend, `npm run build:frontend` to build the UI, `npm run typecheck:frontend` to type-check its TypeScript, and `npm test` to run the suite.
+
+The API provides `GET /api/claims`, `GET /api/claims/:claim_id`, and `POST /api/claims/:claim_id/transition`. Workflow data is in memory and resets when the server restarts.
 
 ## Workflow engine
 
@@ -32,4 +38,4 @@ engine.advance({
 });
 ```
 
-Set `MAX_INFO_REQUEST_CYCLES` in `.env` (default `3`). The setting counts successful transitions into `PENDING_INFO` per claim; the next attempt is rejected with the escalation message. Roles used by the challenge are `document_clerk`, `team_lead`, `assessor`, `finance`, and `system`.
+Set `MAX_INFO_REQUEST_CYCLES` in the root `.env` file to configure the per-claim information request limit. Copy `.env.example` as a starting point; if the setting is absent, the engine uses `3`. The value counts successful transitions into `PENDING_INFO` per claim; the next attempt is rejected with the escalation message. Roles used by the challenge are `document_clerk`, `team_lead`, `assessor`, `finance`, and `system`.

@@ -81,6 +81,7 @@ export interface AvailableTransition {
   readonly to: StateName;
   readonly authorizedRoles: readonly Role[];
   readonly preconditions: readonly {
+    readonly check: PreconditionCheck;
     readonly description: string;
     readonly satisfied: boolean;
   }[];
@@ -117,6 +118,24 @@ function hasText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+const sampleClaimSeeds = [
+  { id: "CLM-2025-0814", memberId: "MBR-309482", amount: 4_850, policyLimit: 10_000 },
+  { id: "CLM-2025-0815", memberId: "MBR-781025", amount: 2_200, policyLimit: 5_000 },
+  { id: "CLM-2025-0816", memberId: "MBR-440196", amount: 7_600, policyLimit: 8_000 },
+] as const;
+
+const sampleClaimFacts: ClaimFacts = {
+  documentsPresent: true,
+  assessorAssigned: true,
+  assessmentReportComplete: true,
+  rejectionReason: "",
+  missingInfoDescription: "A treatment invoice is required.",
+  newInformationReceived: true,
+  paymentRequestCreated: true,
+  paymentConfirmed: true,
+  memberAcknowledged: true,
+};
+
 /**
  * In-memory core workflow engine. Claims and audit entries are returned as
  * immutable snapshots; adapters can persist them in a database later.
@@ -141,8 +160,27 @@ export class StateMachineEngine {
     this.logSideEffect = options.sideEffectLogger ?? console.log;
   }
 
+  /** Creates an engine populated with the demo claims used by the API and UI. */
+  static withSampleClaims(options: StateMachineEngineOptions = {}): StateMachineEngine {
+    const engine = new StateMachineEngine(options);
+    for (const sample of sampleClaimSeeds) {
+      engine.createClaim(
+        sample.id,
+        { ...sampleClaimFacts, approvedAmount: sample.amount },
+        sample.policyLimit,
+        { memberId: sample.memberId, amount: sample.amount },
+      );
+    }
+    return engine;
+  }
+
   /** Creates a claim in the configured initial state and initializes its audit history. */
-  createClaim(id: string, facts: ClaimFacts = {}, policyLimit?: number): Claim {
+  createClaim(
+    id: string,
+    facts: ClaimFacts = {},
+    policyLimit?: number,
+    metadata?: Readonly<Record<string, unknown>>,
+  ): Claim {
     if (!hasText(id)) throw new Error("Claim id must be a non-empty string.");
     if (this.claims.has(id)) throw new Error(`Claim "${id}" already exists.`);
     const timestamp = this.now().toISOString();
@@ -153,6 +191,7 @@ export class StateMachineEngine {
       updatedAt: timestamp,
       facts,
       ...(policyLimit === undefined ? {} : { policyLimit }),
+      ...(metadata === undefined ? {} : { metadata }),
     });
     this.claims.set(id, claim);
     this.auditEntries.set(id, Object.freeze([]));
@@ -167,6 +206,11 @@ export class StateMachineEngine {
     return claim;
   }
 
+  /** Returns an immutable list of all claim snapshots currently held by the engine. */
+  getClaims(): readonly Claim[] {
+    return Object.freeze([...this.claims.values()]);
+  }
+
   /** Update source facts as documents, assessment, or payment systems report progress. */
   updateFacts(claimId: string, facts: ClaimFacts): Claim {
     const claim = this.getClaim(claimId);
@@ -177,6 +221,11 @@ export class StateMachineEngine {
   getInformationRequestCycles(claimId: string): number {
     this.getClaim(claimId);
     return this.informationRequestCycles.get(claimId) ?? 0;
+  }
+
+  /** Returns the maximum number of information requests allowed per claim. */
+  getInformationRequestCycleLimit(): number {
+    return this.maxInformationRequestCycles;
   }
 
   /** Lists configured transitions from the claim's current state and their precondition status. */
@@ -190,6 +239,7 @@ export class StateMachineEngine {
           authorizedRoles: Object.freeze([...transition.authorizedRoles]),
           preconditions: Object.freeze(
             transition.preconditions.map((precondition) => Object.freeze({
+              check: precondition.check,
               description: precondition.description,
               satisfied: this.evaluate(precondition.check, claim),
             })),
@@ -227,13 +277,22 @@ export class StateMachineEngine {
       throw new InformationRequestLimitError(this.maxInformationRequestCycles);
     }
 
+    const rejectionReason = input.to === "REJECTED" && hasText(input.reason) ? input.reason.trim() : undefined;
+    const claimForChecks = rejectionReason
+      ? { ...claim, facts: { ...claim.facts, rejectionReason } }
+      : claim;
     const unmet = transition.preconditions
-      .filter((precondition) => !this.evaluate(precondition.check, claim))
+      .filter((precondition) => !this.evaluate(precondition.check, claimForChecks))
       .map((precondition) => precondition.description);
     if (unmet.length > 0) throw new PreconditionFailedError(claim.state, input.to, unmet);
 
     const timestamp = this.now().toISOString();
-    const nextClaim = this.snapshotClaim({ ...claim, state: input.to, updatedAt: timestamp });
+    const nextClaim = this.snapshotClaim({
+      ...claim,
+      ...(rejectionReason ? { facts: { ...claim.facts, rejectionReason } } : {}),
+      state: input.to,
+      updatedAt: timestamp,
+    });
     const auditEntry: AuditEntry = Object.freeze({
       timestamp,
       claimId: claim.id,
