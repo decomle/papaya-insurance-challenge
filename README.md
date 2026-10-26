@@ -27,6 +27,7 @@ The API provides `GET /api/claims`, `GET /api/claims/:claim_id`, and `POST /api/
 - **State machine configuration:** [config/state-machine.json](./config/state-machine.json) defines the states, transitions, preconditions, side effects, and authorized roles.
 - **Scenario results:** `npm test` runs the five required scenarios plus additional validation tests. The five scenarios pass: happy path reaches `CLOSED`; rejection path reaches `CLOSED`; information-request loop reaches `CLOSED` within the limit; `SUBMITTED → APPROVED` is rejected; and an unauthorized role is rejected. The suite currently contains 28 tests across `backend/test/StateMachineEngine.test.ts` and `backend/test/server.test.ts`.
 - **Audit trail output:** The full transition history is returned in the `auditTrail` field by `GET /api/claims/:claim_id` and is visible in the UI. The engine tests verify its fields, immutability, and that failed transitions are not recorded.
+- **AI conversation log:** [ai_conversion_log.md](./ai_conversion_log.md) contains the conversation transcript documenting how the project was developed with AI assistance. Raw conversion log can be found in [raw_codex_conversion_logs.zip](./raw_codex_conversion_logs.zip) 
 
 ### Requirement traceability
 
